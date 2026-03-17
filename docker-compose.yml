@@ -1,0 +1,107 @@
+version: '3.8'
+
+# SDD Microservice - 本地开发环境
+# 使用方式：docker compose up -d
+
+networks:
+  sdd-network:
+    driver: bridge
+
+volumes:
+  mysql-data:
+  redis-data:
+  nacos-data:
+
+services:
+  # ==============================
+  # 基础设施
+  # ==============================
+
+  mysql:
+    image: mysql:8.0
+    container_name: sdd-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: sdd_user
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    networks:
+      - sdd-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: sdd-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - sdd-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  nacos:
+    image: nacos/nacos-server:v2.3.0
+    container_name: sdd-nacos
+    restart: unless-stopped
+    environment:
+      MODE: standalone
+      SPRING_DATASOURCE_PLATFORM: embedded
+      JVM_XMS: 256m
+      JVM_XMX: 256m
+    ports:
+      - "8848:8848"
+      - "9848:9848"
+    volumes:
+      - nacos-data:/home/nacos/data
+    networks:
+      - sdd-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8848/nacos/actuator/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+
+  # ==============================
+  # 可选：Swagger Editor（在线编辑契约）
+  # ==============================
+  swagger-editor:
+    image: swaggerapi/swagger-editor
+    container_name: sdd-swagger-editor
+    restart: unless-stopped
+    ports:
+      - "8090:8080"
+    networks:
+      - sdd-network
+
+  # ==============================
+  # 可选：Prism Mock Server（基于契约的 Mock）
+  # SDD 核心工具：前端/其他服务可对此 Mock 进行独立开发
+  # ==============================
+  prism-user-mock:
+    image: stoplight/prism:4
+    container_name: sdd-prism-user-mock
+    restart: unless-stopped
+    command: mock -h 0.0.0.0 /specs/user-service-api.yaml
+    volumes:
+      - ./services/sdd-user-service/src/main/resources/specs:/specs:ro
+    ports:
+      - "4010:4010"
+    networks:
+      - sdd-network

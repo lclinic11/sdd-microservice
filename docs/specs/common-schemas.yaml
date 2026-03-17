@@ -1,0 +1,230 @@
+openapi: 3.0.3
+
+info:
+  title: SDD Common Schemas
+  description: |
+    ## 全局公共 Schema 定义
+
+    > **SDD 规范**：此文件是跨服务公用数据结构的「唯一真实来源」。
+    > 各服务契约通过 `$ref` 引用此处定义，禁止在各服务中重复定义相同结构。
+
+    ### 引用方式
+    在各服务的 OpenAPI YAML 中：
+    ```yaml
+    $ref: '../../../../docs/specs/common-schemas.yaml#/components/schemas/PageMeta'
+    ```
+
+  version: 1.0.0
+
+# 此文件不定义 paths，仅提供可复用的 components
+paths: {}
+
+components:
+  schemas:
+
+    # =========================================================
+    # 统一响应包装结构
+    # =========================================================
+
+    ResultBase:
+      type: object
+      description: 所有 API 响应的基础结构
+      required: [code, message, timestamp]
+      properties:
+        code:
+          type: integer
+          description: 业务状态码（200 = 成功，其他见 ResultCode.java）
+          example: 200
+        message:
+          type: string
+          description: 响应描述
+          example: success
+        traceId:
+          type: string
+          description: 请求追踪 ID（由网关注入）
+          example: a1b2c3d4e5f6
+        timestamp:
+          type: integer
+          format: int64
+          description: 响应时间戳（毫秒）
+          example: 1710000000000
+
+    ErrorResponse:
+      allOf:
+        - $ref: '#/components/schemas/ResultBase'
+      description: 错误响应结构
+      example:
+        code: 404
+        message: 用户不存在
+        timestamp: 1710000000000
+
+    # =========================================================
+    # 分页结构
+    # =========================================================
+
+    PageQuery:
+      type: object
+      description: 分页查询参数（用于请求体分页场景）
+      properties:
+        page:
+          type: integer
+          minimum: 1
+          default: 1
+          description: 页码（从 1 开始）
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+          description: 每页数量
+
+    PageMeta:
+      type: object
+      description: 分页元信息
+      required: [total, page, size, pages]
+      properties:
+        total:
+          type: integer
+          format: int64
+          description: 总记录数
+          example: 100
+        page:
+          type: integer
+          description: 当前页码
+          example: 1
+        size:
+          type: integer
+          description: 每页数量
+          example: 20
+        pages:
+          type: integer
+          description: 总页数
+          example: 5
+
+    # =========================================================
+    # 通用枚举
+    # =========================================================
+
+    SortOrder:
+      type: string
+      enum: [ASC, DESC]
+      description: 排序方向
+      default: DESC
+
+    CommonStatus:
+      type: string
+      enum: [ACTIVE, DISABLED]
+      description: |
+        通用状态枚举：
+        - ACTIVE：启用
+        - DISABLED：禁用
+
+    # =========================================================
+    # 通用参数
+    # =========================================================
+
+  parameters:
+
+    PageParam:
+      name: page
+      in: query
+      description: 页码（从 1 开始）
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+
+    SizeParam:
+      name: size
+      in: query
+      description: 每页数量
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+    SortParam:
+      name: sort
+      in: query
+      description: 排序字段
+      schema:
+        type: string
+
+    OrderParam:
+      name: order
+      in: query
+      description: 排序方向
+      schema:
+        $ref: '#/components/schemas/SortOrder'
+
+  # =========================================================
+  # 通用响应
+  # =========================================================
+
+  responses:
+
+    BadRequest:
+      description: 参数校验失败（400）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: 400
+            message: "用户名长度不能少于 3 个字符"
+            timestamp: 1710000000000
+
+    Unauthorized:
+      description: 未认证或 Token 无效（401）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: 401
+            message: "Token 已过期"
+            timestamp: 1710000000000
+
+    Forbidden:
+      description: 权限不足（403）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    NotFound:
+      description: 资源不存在（404）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Conflict:
+      description: 资源冲突（409，如唯一键重复）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    InternalServerError:
+      description: 服务内部错误（500）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  # =========================================================
+  # 安全方案（各服务契约可直接引用）
+  # =========================================================
+
+  securitySchemes:
+
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT Access Token。
+        通过 POST /api/auth/login 获取，有效期 2 小时。
+        格式：`Authorization: Bearer <token>`

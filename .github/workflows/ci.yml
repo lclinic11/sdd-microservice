@@ -1,0 +1,64 @@
+name: SDD CI Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # ========================
+  # SDD 步骤 1：契约校验
+  # ========================
+  validate-specs:
+    name: "SDD - Validate OpenAPI Specs"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Spectral
+        run: npm install -g @stoplight/spectral-cli
+      - name: Validate OpenAPI Specs
+        run: |
+          find . -name "*.yaml" -path "*/specs/*" -exec spectral lint {} --ruleset .spectral.yml \;
+
+  # ========================
+  # SDD 步骤 2：构建和测试
+  # ========================
+  build:
+    name: "Build & Test"
+    needs: validate-specs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+      - name: Generate sources from specs (SDD)
+        run: mvn generate-sources -f sdd-microservice/pom.xml
+      - name: Build
+        run: mvn -B package --file sdd-microservice/pom.xml -DskipTests
+      - name: Test
+        run: mvn -B test --file sdd-microservice/pom.xml
+
+  # ========================
+  # SDD 步骤 3：契约兼容性检查
+  # ========================
+  contract-compatibility:
+    name: "SDD - Contract Compatibility Check"
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check breaking changes
+        uses: oasdiff/oasdiff-action@main
+        with:
+          base: 'HEAD~1:services/sdd-user-service/src/main/resources/specs/user-service-api.yaml'
+          revision: 'services/sdd-user-service/src/main/resources/specs/user-service-api.yaml'
+          fail-on: ERR

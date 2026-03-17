@@ -1,0 +1,72 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: sdd-gateway
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+        namespace: ${NACOS_NAMESPACE:public}
+    gateway:
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+      # 全局默认过滤器
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
+      # 跨域配置
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowed-origins: "*"
+            allowed-methods: "*"
+            allowed-headers: "*"
+            allow-credentials: false
+      routes:
+        # 用户服务路由
+        - id: sdd-user-service
+          uri: lb://sdd-user-service
+          predicates:
+            - Path=/api/users/**
+          filters:
+            - StripPrefix=1
+
+        # 认证服务路由（白名单，不走 JWT 过滤）
+        - id: sdd-auth
+          uri: lb://sdd-auth
+          predicates:
+            - Path=/api/auth/**
+          filters:
+            - StripPrefix=1
+
+# SDD 自定义配置
+sdd:
+  security:
+    jwt:
+      secret: ${JWT_SECRET:sdd-microservice-jwt-secret-key-minimum-32-chars}
+    white-list:
+      - /api/auth/**
+      - /actuator/**
+      - /v3/api-docs/**
+      - /swagger-ui/**
+
+# 日志
+logging:
+  level:
+    com.sdd.gateway: DEBUG
+    org.springframework.cloud.gateway: INFO
+
+# 监控
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway,metrics
+  endpoint:
+    gateway:
+      enabled: true
+    health:
+      show-details: always

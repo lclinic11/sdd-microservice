@@ -1,0 +1,435 @@
+openapi: 3.0.3
+
+info:
+  title: SDD User Service API
+  description: |
+    ## 用户服务 API 契约
+
+    > **SDD 规范**：本文件是「唯一真实来源」（Single Source of Truth）。
+    > 所有业务逻辑、前端对接、服务间调用均以此契约为准。
+    > **禁止**直接修改生成的代码，需求变更请先修改此文件。
+
+    ### 开发流程（SDD）
+    1. 📝 **写契约** - 在此 YAML 定义 API
+    2. ⚙️ **生成代码** - `mvn generate-sources` 生成接口桩
+    3. 🔨 **实现接口** - Controller 实现生成的接口
+    4. ✅ **契约测试** - 使用 Mock Server 做契约验证
+    5. 🚀 **部署上线** - 确保实现与契约一致
+  version: 1.0.0
+  contact:
+    name: SDD Team
+    email: sdd@example.com
+  license:
+    name: Apache 2.0
+
+servers:
+  - url: http://localhost:8082
+    description: 本地开发环境
+  - url: http://sdd-gateway:8080/api/users
+    description: 通过网关访问
+
+tags:
+  - name: users
+    description: 用户管理
+  - name: profiles
+    description: 用户资料
+
+paths:
+  /users:
+    get:
+      tags: [users]
+      operationId: listUsers
+      summary: 分页查询用户列表
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+        - name: keyword
+          in: query
+          description: 搜索关键词（用户名/邮箱）
+          schema:
+            type: string
+        - name: status
+          in: query
+          description: 用户状态过滤
+          schema:
+            $ref: '#/components/schemas/UserStatus'
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageResultOfUserVO'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [users]
+      operationId: createUser
+      summary: 创建用户
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultOfUserVO'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /users/{userId}:
+    get:
+      tags: [users]
+      operationId: getUserById
+      summary: 根据 ID 查询用户
+      parameters:
+        - $ref: '#/components/parameters/UserIdPath'
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultOfUserVO'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags: [users]
+      operationId: updateUser
+      summary: 更新用户信息
+      parameters:
+        - $ref: '#/components/parameters/UserIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultOfUserVO'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [users]
+      operationId: deleteUser
+      summary: 删除用户（逻辑删除）
+      parameters:
+        - $ref: '#/components/parameters/UserIdPath'
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultOfVoid'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /users/{userId}/status:
+    patch:
+      tags: [users]
+      operationId: updateUserStatus
+      summary: 修改用户状态（启用/禁用）
+      parameters:
+        - $ref: '#/components/parameters/UserIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStatusRequest'
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultOfVoid'
+
+  /users/me:
+    get:
+      tags: [profiles]
+      operationId: getCurrentUser
+      summary: 获取当前登录用户信息
+      parameters:
+        - name: X-User-Id
+          in: header
+          required: true
+          description: 由网关注入的用户 ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultOfUserVO'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  parameters:
+    UserIdPath:
+      name: userId
+      in: path
+      required: true
+      description: 用户 ID
+      schema:
+        type: integer
+        format: int64
+        example: 1
+
+    PageParam:
+      name: page
+      in: query
+      description: 页码（从 1 开始）
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+
+    SizeParam:
+      name: size
+      in: query
+      description: 每页数量
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+  schemas:
+    # ===== 请求体 =====
+    CreateUserRequest:
+      type: object
+      required: [username, email, password]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 50
+          description: 用户名（唯一）
+          example: john_doe
+        email:
+          type: string
+          format: email
+          description: 邮箱地址（唯一）
+          example: john@example.com
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+          description: 密码（明文，服务端加密存储）
+          example: SecurePass123
+        nickname:
+          type: string
+          maxLength: 50
+          description: 昵称
+          example: John
+        phone:
+          type: string
+          pattern: '^1[3-9]\d{9}$'
+          description: 手机号
+          example: "13800138000"
+        avatar:
+          type: string
+          format: uri
+          description: 头像 URL
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        nickname:
+          type: string
+          maxLength: 50
+        phone:
+          type: string
+          pattern: '^1[3-9]\d{9}$'
+        avatar:
+          type: string
+          format: uri
+
+    UpdateStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          $ref: '#/components/schemas/UserStatus'
+
+    # ===== 响应视图 =====
+    UserVO:
+      type: object
+      description: 用户视图对象（脱敏，不含密码等敏感信息）
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        username:
+          type: string
+          example: john_doe
+        email:
+          type: string
+          example: john@example.com
+        nickname:
+          type: string
+          example: John
+        phone:
+          type: string
+          example: "138****8000"
+        avatar:
+          type: string
+          example: https://cdn.example.com/avatar/1.png
+        status:
+          $ref: '#/components/schemas/UserStatus'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    # ===== 通用结构 =====
+    UserStatus:
+      type: string
+      enum: [ACTIVE, DISABLED, PENDING]
+      description: |
+        用户状态：
+        - ACTIVE：正常
+        - DISABLED：已禁用
+        - PENDING：待激活
+
+    # ===== 统一响应包装 =====
+    ResultOfUserVO:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: success
+        data:
+          $ref: '#/components/schemas/UserVO'
+        timestamp:
+          type: integer
+          format: int64
+
+    ResultOfVoid:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: success
+        timestamp:
+          type: integer
+          format: int64
+
+    PageResultOfUserVO:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: success
+        data:
+          $ref: '#/components/schemas/PageDataOfUserVO'
+        timestamp:
+          type: integer
+          format: int64
+
+    PageDataOfUserVO:
+      type: object
+      properties:
+        total:
+          type: integer
+          format: int64
+          description: 总记录数
+        page:
+          type: integer
+          description: 当前页
+        size:
+          type: integer
+          description: 每页数量
+        pages:
+          type: integer
+          description: 总页数
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserVO'
+
+    ErrorResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        timestamp:
+          type: integer
+          format: int64
+
+  responses:
+    BadRequest:
+      description: 参数校验失败
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Unauthorized:
+      description: 未认证或 Token 无效
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    NotFound:
+      description: 资源不存在
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Conflict:
+      description: 资源已存在（如用户名重复）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Access Token（通过 /auth/login 获取）
+
+security:
+  - BearerAuth: []

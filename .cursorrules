@@ -1,0 +1,52 @@
+# SDD Microservice - Cursor AI Rules
+# 此文件被 Cursor IDE 自动读取，所有 AI 补全和生成遵循以下规则
+
+## 项目类型
+Spring Cloud 微服务项目，遵循 SDD（规范驱动开发）理念。
+Java 17 + Spring Boot 3.2 + MyBatis Plus + OpenAPI 3.0
+
+## 核心规范
+
+### 响应格式
+- 所有 Controller 方法返回 `Result<T>`，不允许直接返回实体
+- 成功用 `Result.success(data)`，失败用 `Result.fail(ResultCode.XXX)`
+
+### 异常处理
+- 业务异常必须 `throw new BizException(ResultCode.XXX)`
+- 禁止 `throw new RuntimeException("message")`
+- 禁止 catch 后返回 null 或默认值（吞异常）
+
+### 代码分层
+- Controller：只接收参数 + 调 Service + 返回 Result，不写业务逻辑
+- Service：业务逻辑，写操作加 @Transactional(rollbackFor = Exception.class)
+- Mapper：extends BaseMapper，用 LambdaQueryWrapper，不写 XML
+- Entity：数据库映射，加 @TableName/@TableId/@TableLogic
+- DTO：请求参数，加 Bean Validation 注解
+- VO：响应数据，敏感字段脱敏
+
+### 日志
+- 使用 @Slf4j，结构化日志：`log.info("操作: field={}", value)`
+- 禁止 System.out.println
+
+### SDD 工作流（添加新接口时）
+1. 先修改 `src/main/resources/specs/xxx-api.yaml` 契约文件
+2. 运行 `mvn generate-sources` 生成接口桩
+3. 在 Controller 中实现接口
+4. 禁止修改 `target/generated-sources/` 下的文件
+
+### MyBatis Plus
+- 使用 LambdaQueryWrapper（类型安全）
+- 逻辑删除字段 `deleted`，框架自动处理（不要手动加 deleted=0 条件）
+- 自动填充：createdAt/updatedAt 通过 MetaObjectHandler 自动填充
+
+## 代码风格参考
+- Controller: `services/sdd-user-service/src/main/java/com/sdd/user/controller/UserController.java`
+- Service: `services/sdd-user-service/src/main/java/com/sdd/user/service/UserService.java`
+- 契约: `services/sdd-user-service/src/main/resources/specs/user-service-api.yaml`
+
+## 禁止事项
+- 禁止在 Controller 写 if/业务判断
+- 禁止直接返回 Entity
+- 禁止硬编码错误信息，必须用 ResultCode 枚举
+- 禁止在 VO 中包含 password、token 等敏感字段
+- 禁止修改 generated-sources 下的代码

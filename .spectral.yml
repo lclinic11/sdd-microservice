@@ -1,0 +1,20 @@
+extends: ["spectral:oas"]
+
+rules:
+  # SDD 规范：所有接口必须有 operationId
+  operation-operationId: error
+
+  # SDD 规范：所有接口必须有 summary
+  operation-summary: error
+
+  # SDD 规范：所有接口必须有 tags
+  operation-tags: error
+
+  # SDD 规范：所有参数必须有 description
+  operation-parameters: warn
+
+  # 安全规范
+  oas3-api-servers: warn
+
+  # 响应规范：必须定义 200/201 响应
+  operation-success-response: error
