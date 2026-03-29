@@ -1,7 +1,12 @@
 version: '3.8'
 
 # SDD Microservice - 本地开发环境
-# 使用方式：docker compose up -d
+# 使用方式：
+#   全部启动：docker compose up -d
+#   只启动基础设施：docker compose up -d mysql redis nacos
+#   查看状态：docker compose ps
+#   查看日志：docker compose logs -f [service]
+#   停止并清理：docker compose down -v
 
 networks:
   sdd-network:
@@ -10,76 +15,104 @@ networks:
 volumes:
   mysql-data:
   redis-data:
-  nacos-data:
+  nacos-mysql-data:
 
 services:
   # ==============================
-  # 基础设施
+  # MySQL 8.0
   # ==============================
-
   mysql:
     image: mysql:8.0
     container_name: sdd-mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: root
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
       MYSQL_DATABASE: sdd_user
       TZ: Asia/Shanghai
     ports:
-      - "3306:3306"
+      - "${DB_PORT:-3306}:3306"
     volumes:
       - mysql-data:/var/lib/mysql
-      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./scripts/nacos-mysql.sql:/docker-entrypoint-initdb.d/02-nacos.sql:ro
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+      --max_connections=500
+      --innodb_buffer_pool_size=256M
     networks:
       - sdd-network
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-root123}"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 30s
 
+  # ==============================
+  # Redis 7（带密码）
+  # ==============================
   redis:
     image: redis:7-alpine
     container_name: sdd-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
-    command: redis-server --appendonly yes
+      - ./scripts/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    command: redis-server /usr/local/etc/redis/redis.conf
     networks:
       - sdd-network
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-sdd123}", "ping"]
       interval: 10s
       timeout: 3s
-      retries: 3
+      retries: 5
+      start_period: 10s
 
+  # ==============================
+  # Nacos 2.3（MySQL 持久化）
+  # ==============================
   nacos:
     image: nacos/nacos-server:v2.3.0
     container_name: sdd-nacos
     restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
     environment:
       MODE: standalone
-      SPRING_DATASOURCE_PLATFORM: embedded
+      SPRING_DATASOURCE_PLATFORM: mysql
+      MYSQL_SERVICE_HOST: mysql
+      MYSQL_SERVICE_PORT: 3306
+      MYSQL_SERVICE_DB_NAME: nacos_config
+      MYSQL_SERVICE_USER: root
+      MYSQL_SERVICE_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
+      MYSQL_SERVICE_DB_PARAM: characterEncoding=utf8&connectTimeout=1000&socketTimeout=3000&autoReconnect=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
       JVM_XMS: 256m
       JVM_XMX: 256m
+      JVM_XMN: 128m
+      NACOS_AUTH_ENABLE: "true"
+      NACOS_AUTH_TOKEN: ${NACOS_AUTH_TOKEN:-SecretKey012345678901234567890123456789012345678901234567890123456789}
+      NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY:-serverIdentity}
+      NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE:-security}
     ports:
-      - "8848:8848"
+      - "${NACOS_PORT:-8848}:8848"
       - "9848:9848"
-    volumes:
-      - nacos-data:/home/nacos/data
     networks:
       - sdd-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8848/nacos/actuator/health"]
-      interval: 20s
+      test: ["CMD", "curl", "-sf", "http://localhost:8848/nacos/actuator/health"]
+      interval: 15s
       timeout: 10s
-      retries: 5
+      retries: 10
+      start_period: 60s
 
   # ==============================
-  # 可选：Swagger Editor（在线编辑契约）
+  # Swagger Editor（在线编辑契约）
+  # http://localhost:8090
   # ==============================
   swagger-editor:
     image: swaggerapi/swagger-editor
@@ -89,19 +122,41 @@ services:
       - "8090:8080"
     networks:
       - sdd-network
+    profiles:
+      - tools
 
   # ==============================
-  # 可选：Prism Mock Server（基于契约的 Mock）
-  # SDD 核心工具：前端/其他服务可对此 Mock 进行独立开发
+  # Prism Mock Server（用户服务 Mock）
+  # http://localhost:4010
+  # SDD 核心：前端/其他服务基于契约独立开发
   # ==============================
   prism-user-mock:
     image: stoplight/prism:4
     container_name: sdd-prism-user-mock
     restart: unless-stopped
-    command: mock -h 0.0.0.0 /specs/user-service-api.yaml
+    command: mock -h 0.0.0.0 --dynamic /specs/user-service-api.yaml
     volumes:
       - ./services/sdd-user-service/src/main/resources/specs:/specs:ro
     ports:
       - "4010:4010"
     networks:
       - sdd-network
+    profiles:
+      - tools
+
+  # ==============================
+  # Zipkin（分布式链路追踪）
+  # http://localhost:9411
+  # ==============================
+  zipkin:
+    image: openzipkin/zipkin:3
+    container_name: sdd-zipkin
+    restart: unless-stopped
+    ports:
+      - "9411:9411"
+    environment:
+      - STORAGE_TYPE=mem
+    networks:
+      - sdd-network
+    profiles:
+      - tools
