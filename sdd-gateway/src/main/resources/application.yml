@@ -9,6 +9,8 @@ spring:
       discovery:
         server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
         namespace: ${NACOS_NAMESPACE:public}
+        username: ${NACOS_USERNAME:nacos}
+        password: ${NACOS_PASSWORD:nacos}
     gateway:
       discovery:
         locator:
@@ -26,21 +28,21 @@ spring:
             allowed-headers: "*"
             allow-credentials: false
       routes:
-        # 用户服务路由
+        # 用户服务路由：/api/users → /users，/api/users/xxx → /users/xxx
         - id: sdd-user-service
           uri: lb://sdd-user-service
           predicates:
-            - Path=/api/users/**
+            - Path=/api/users,/api/users/**
           filters:
-            - StripPrefix=1
+            - RewritePath=/api(?<segment>/.*), ${segment}
 
-        # 认证服务路由（白名单，不走 JWT 过滤）
+        # 认证服务路由（白名单，不走 JWT 过滤）：/api/auth → /auth，/api/auth/xxx → /auth/xxx
         - id: sdd-auth
           uri: lb://sdd-auth
           predicates:
-            - Path=/api/auth/**
+            - Path=/api/auth,/api/auth/**
           filters:
-            - StripPrefix=1
+            - RewritePath=/api(?<segment>/.*), ${segment}
 
 # SDD 自定义配置
 sdd:

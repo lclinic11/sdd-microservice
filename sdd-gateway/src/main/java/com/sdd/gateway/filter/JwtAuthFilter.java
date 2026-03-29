@@ -5,12 +5,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sdd.common.result.Result;
 import com.sdd.common.result.ResultCode;
 import com.sdd.common.utils.JwtUtils;
+import com.sdd.gateway.config.SddSecurityProperties;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
@@ -26,7 +26,6 @@ import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 
 /**
  * JWT 认证全局过滤器
@@ -41,15 +40,7 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
     private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();
 
     private final ObjectMapper objectMapper;
-
-    @Value("${sdd.security.jwt.secret}")
-    private String jwtSecret;
-
-    /**
-     * 白名单路径（无需鉴权）
-     */
-    @Value("${sdd.security.white-list:}")
-    private List<String> whiteList;
+    private final SddSecurityProperties securityProperties;
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
@@ -57,6 +48,7 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
 
         // 白名单直接放行
         if (isWhiteListed(path)) {
+            log.debug("白名单放行: {}", path);
             return chain.filter(exchange);
         }
 
@@ -66,7 +58,7 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
         }
 
         try {
-            Claims claims = JwtUtils.parseClaims(token, jwtSecret);
+            Claims claims = JwtUtils.parseClaims(token, securityProperties.getJwt().getSecret());
 
             // 将用户信息注入请求头，透传到下游服务
             String userId = claims.getSubject();
@@ -104,8 +96,11 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
     }
 
     private boolean isWhiteListed(String path) {
-        return whiteList != null && whiteList.stream()
-                .anyMatch(pattern -> PATH_MATCHER.match(pattern, path));
+        var whiteList = securityProperties.getWhiteList();
+        if (whiteList == null || whiteList.isEmpty()) {
+            return false;
+        }
+        return whiteList.stream().anyMatch(pattern -> PATH_MATCHER.match(pattern, path));
     }
 
     private Mono<Void> writeErrorResponse(ServerWebExchange exchange, ResultCode resultCode) {
