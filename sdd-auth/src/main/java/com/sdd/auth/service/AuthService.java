@@ -5,12 +5,14 @@ import com.sdd.auth.model.LoginResponse;
 import com.sdd.common.exception.BizException;
 import com.sdd.common.result.ResultCode;
 import com.sdd.common.utils.JwtUtils;
+import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -78,7 +80,8 @@ public class AuthService {
      */
     public LoginResponse refreshToken(String refreshToken) {
         try {
-            String userId = JwtUtils.getSubject(refreshToken, jwtSecret);
+            Claims claims = JwtUtils.parseClaims(refreshToken, jwtSecret);
+            String userId = claims.getSubject();
 
             // 验证 Redis 中的 Refresh Token
             String storedToken = redisTemplate.opsForValue().get(REFRESH_TOKEN_KEY + userId);
@@ -86,9 +89,15 @@ public class AuthService {
                 throw new BizException(ResultCode.REFRESH_TOKEN_EXPIRED);
             }
 
+            // 从原 Token 中取出真实的用户名和角色，避免硬编码
+            String username = claims.get("username", String.class);
+            @SuppressWarnings("unchecked")
+            List<String> roleList = claims.get("roles", List.class);
+            String[] roles = roleList != null ? roleList.toArray(new String[0]) : new String[]{"ROLE_USER"};
+
             // 重新生成 Access Token
-            Map<String, Object> claims = JwtUtils.buildUserClaims(Long.parseLong(userId), userId, new String[]{"ROLE_USER"});
-            String newAccessToken = JwtUtils.generateToken(claims, userId, jwtSecret, accessTokenExpireMs);
+            Map<String, Object> newClaims = JwtUtils.buildUserClaims(Long.parseLong(userId), username, roles);
+            String newAccessToken = JwtUtils.generateToken(newClaims, userId, jwtSecret, accessTokenExpireMs);
 
             return LoginResponse.builder()
                     .accessToken(newAccessToken)

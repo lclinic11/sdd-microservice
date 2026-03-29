@@ -32,15 +32,19 @@ public class UserService {
      */
     public Page<UserVO> listUsers(int page, int size, String keyword, String status) {
         LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<User>()
-                .like(StringUtils.hasText(keyword), User::getUsername, keyword)
-                .or()
-                .like(StringUtils.hasText(keyword), User::getEmail, keyword)
+                .and(StringUtils.hasText(keyword), w -> w
+                        .like(User::getUsername, keyword)
+                        .or()
+                        .like(User::getEmail, keyword))
                 .eq(StringUtils.hasText(status), User::getStatus, status)
                 .orderByDesc(User::getCreatedAt);
 
         Page<User> userPage = userMapper.selectPage(new Page<>(page, size), wrapper);
 
-        return userPage.convert(this::toVO);
+        // IPage.convert() 返回 IPage，手动转换为 Page<UserVO>
+        Page<UserVO> voPage = new Page<>(userPage.getCurrent(), userPage.getSize(), userPage.getTotal());
+        voPage.setRecords(userPage.getRecords().stream().map(this::toVO).toList());
+        return voPage;
     }
 
     /**

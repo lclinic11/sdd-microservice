@@ -49,9 +49,6 @@
         <swagger-annotations.version>2.2.20</swagger-annotations.version>
         <jackson-databind-nullable.version>0.2.6</jackson-databind-nullable.version>
 
-        <!-- 监控 -->
-        <micrometer.version>1.12.3</micrometer.version>
-
         <!-- 插件 -->
         <maven-compiler.version>3.11.0</maven-compiler.version>
         <maven-surefire.version>3.2.5</maven-surefire.version>
@@ -189,15 +186,6 @@
                 <groupId>org.openapitools</groupId>
                 <artifactId>jackson-databind-nullable</artifactId>
                 <version>${jackson-databind-nullable.version}</version>
-            </dependency>
-
-            <!-- Micrometer Tracing -->
-            <dependency>
-                <groupId>io.micrometer</groupId>
-                <artifactId>micrometer-tracing-bom</artifactId>
-                <version>${micrometer.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
             </dependency>
         </dependencies>
     </dependencyManagement>
